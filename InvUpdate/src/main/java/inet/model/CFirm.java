@@ -116,11 +116,11 @@ public class CFirm implements EventListener {
 
 	public void update(){ // draw random numbers 
 		this.pDem = (double) SimulationEngine.getRnd().nextInt(20);
-		this.dQ = (double) pDem - SimulationEngine.getRnd().nextInt(5);  
+		this.dQ = (double) pDem - SimulationEngine.getRnd().nextInt(1);  
 		this.nw[0] = SimulationEngine.getRnd().nextDouble() * 5;
 		this.dInvE = SimulationEngine.getRnd().nextInt(400); 
 		this.dInvE = Math.floor(dInvE / Parameters.getDimK()) * Parameters.getDimK();
-		this.debt = SimulationEngine.getRnd().nextDouble() * 5;
+		this.debt = SimulationEngine.getRnd().nextDouble() * 30;
 		this.lBar =  SimulationEngine.getRnd().nextDouble() * 10;
 		
 		this.lDebt = 0.;
@@ -162,7 +162,7 @@ public class CFirm implements EventListener {
 	// Own methods, sub-methods of invUpdated()
 	// ---------------------------------------------------------------------
 
-	public void step1(){
+	public void step1(){ 
 		// compute the Q and I you can achieve with nw and loan at your disposal 		
 		this.nwPrime = nw[0];
 		double lPrime = lBar;
@@ -208,8 +208,7 @@ public class CFirm implements EventListener {
 		if(nwPrime > 0){
 			System.out.println("nwPrime is POSITIVE. Checking: "
 					+ "\n nwPrime " + nwPrime
-					+ "\n lProd should be equal to 0" + lProd
-					+ "\n and lPrime should be equal to lBar: " + lProd + " = " + lBar); 
+					+ "\n lProd should be equal to 0" + lProd);
 
 			// in the model, underline{r} = 0 ; abstract from it here & tr = 0
 			// paymentWLoan = your expected cash flow at the end of the period, prior to pay the debt, including the loan you keep to pay this debt
@@ -247,8 +246,10 @@ public class CFirm implements EventListener {
 			}
 		} else { // entire nw was used, and therefore also used some (all) of the loan  
 			
-			System.out.println("nwPrime is NIL. Checking: "
+			System.out.println("nwPrime is NIL. Checking all variables: "
+					+"\n qStar " + qStar
 					+ "\n nwPrime " + nwPrime
+					+ "\n lDebt " + lDebt 
 					+ "\n lProd " + lProd + " that should <= lBar " + lBar);
 			
 			if(lProd == lBar){ // used all the loan to fund prod & inv. Only case where the firm could have been credit rationed,
@@ -263,7 +264,7 @@ public class CFirm implements EventListener {
 				System.out.println("Rev expected: " + paymentExpected);
 				
 				if(paymentExpected >= 0){ // expected liquid assets are sufficient to repay the due debt 
-					
+
 					System.out.println("Indeed paymentExpected > 0");
 					this.lDebt = 0;
 					this.cD = lProd;
@@ -278,23 +279,30 @@ public class CFirm implements EventListener {
 				}
 			} else { // used only part of the loan, hence some remaining to also pay the debt if needed. Obiously qStar = dQ, id. inv
 				
-				// as before, see whether if use the totality of the remaining loan makes that the payment condition will be satisfied;
-				// if yes, then implies that lDebt \in (0, lBar - lProd] ; o.w. have to adjust 
-				this.lDebt = lBar - lProd;
-				double paymentWLoan = payment(qStar, nwPrime, lDebt, lProd);
-				System.out.println("Only part of the loan was used; if use total loan, get paymentWLoan = " + paymentWLoan);
-				
-				if(paymentWLoan > 0){  // payment condition hold with full loan used
+				//need first to see if the payment restriction is met without borrowing to pay back the debt, i.e. lDebt = 0
+				if(payment(qStar, nwPrime, 0, lProd) > 0){
+
+					System.out.println("Not all the loan was used. Expectation abour future revenues are sufficient --> no need to borrow actually. "
+							+ "\n and indeed payment without ldebt : " + payment(qStar, nwPrime, 0, lProd));
 					
-					System.out.println("Indeed paymentWLoan > 0");
-					// lDebt \in (0, lBar - lProd]
+					this.lDebt = 0;
+					this.cD = lProd;
+					this.dQ = qStar;
+					this.dInvE = invEStar;
+					
+				} else if(payment(qStar, nwPrime, lBar - lProd, lProd) > 0){					
+					// as before, see whether if use the totality of the remaining loan makes that the payment condition will be satisfied;
+					// if yes, then implies that lDebt \in (0, lBar - lProd] ; o.w. have to adjust 
+					
+					System.out.println("OIf use total loan, get paymentWLoan = " + payment(qStar, nwPrime, lBar - lProd, lProd)  + " that is indeed > 0");
+					
 					this.lDebt = 1/(1 - Parameters.getRepaymentShare() - IUModel.r) * ((Parameters.getRepaymentShare() + IUModel.r) * (debt + lProd) - (p - c) * qStar);
 					System.out.println("lDebt is equal to " + lDebt + " and should be < lbar: " + lBar);
 					this.cD = lProd + lDebt; 
 					System.out.println("cD should also be inferior to lBar " + cD + " < " + lBar);
 					this.dQ = qStar; // in this case should be equal 
 					this.dInvE = invEStar; // id.
-					
+					System.out.println("Checking that payment ---> 0: " + payment(dQ, nwPrime, lDebt, lProd));
 				} else { // payment condition does not hold with full loan used -- obv. will not hold with lower loan 
 					
 					System.out.println("The remaining loan was not sufficient");
@@ -320,7 +328,6 @@ public class CFirm implements EventListener {
 		
 		// Incrementally reduce investment that was funded through internal fund --> use the money saved from the inv. to increase the deposit at the bank
 		while(payment(qStar, nwPrime, lDebt, lProd) < 0 && invEStar > 0){ 
-			
 			invEStar -= Parameters.getDimK(); // reduce inv. by one machine 
 			nwPrime += 1; // because the cost  of a machine = 1
 			
@@ -383,7 +390,7 @@ public class CFirm implements EventListener {
 				// there is now to adjust -- increasing production will not increase revenues because could not sell
 				// this production (sales are bounded above by demand). If try to min the losses, then have to set dQ = qStar;
 				
-				this.dQ = qStar; // id.
+				this.dQ = Math.min(dQ, nw[0]); // id.
 				this.lDebt = 0; // this will shift down the curve but cannot leverage more (ass) 
 				this.cD = 0;
 				this.nwPrime = nw[0] - qStar;
@@ -406,7 +413,6 @@ public class CFirm implements EventListener {
 		
 		//ass: 1 >= Parameters.getRepaymentShare() + IUModel.r
 		while(payment(qStar, nwPrime, lDebt, lProd) < 0 && invEStar > 0){ // reduces incrementally inv. up to either --> 0 or the payment condition is satisfied 
-			
 			if(lProd > 0){
 				
 				System.out.println("Inv. so far funded through loan --> re-allocate loan from lProd to lDebt");
@@ -475,6 +481,7 @@ public class CFirm implements EventListener {
 					// first try to see whether cf + l > 0 with lProd = 0
 					// s.t. locate ourself at the breaking point between the two part of the curve 
 					this.lDebt = lBar;
+					this.lProd = 0;
 					
 					// No loan available --> by definition the corresponding level of qty = either optimal one (dQ) or the one
 					// that the firm is able to fund (nw[0] -- with cost of production = 1). In theory = nw[0] -- because lProd > 0 initially
@@ -486,12 +493,13 @@ public class CFirm implements EventListener {
 							+ "\n and payment: " + payment(qH, nwPrime, lDebt, lProd));
 					
 					if(payment(qH, nwPrime, lDebt, lProd) >=0){ 
+						
 						// then implies that the allocation solution is to the right of lProd = 0
 						// closed form solution, dQ : cf + l = 0
 						this.dQ = 1 / (p - c - 1) * ((Parameters.getRepaymentShare() + IUModel.r) * debt - nw[0] - lBar * ( 1 - Parameters.getRepaymentShare() - IUModel.r));
 						// this dQ should be positive 
 
-						this.lProd = Math.max(0, qH - nw[0]);
+						this.lProd = Math.max(0, dQ - nw[0]);
 						// should be positive
 						this.lDebt = lBar - lProd;
 						this.cD = lBar; // because was just pure re-allocation between lProd and lDebt 
@@ -506,7 +514,7 @@ public class CFirm implements EventListener {
 								"\n corres. nwPrime (should be 0) " + nwPrime +
 								"\n and payment condition should be > 0 = " + payment(dQ, nwPrime, lDebt, lProd));
 				
-					} else { // means that the solution is to the left of this point; then not sure whether qH > 0 or qH < 0
+					} else { // means that the solution is to the left of this point; but then not sure whether qH > 0 or qH < 0
 						
 						this.lProd = 0; // all the loan is used to fund debt repayment, not production
 						this.lDebt = lBar;
@@ -518,16 +526,18 @@ public class CFirm implements EventListener {
 						if(qH > 0){ // check whether indeed qH is positive 
 						
 							this.dQ = qH;
+							this.nwPrime = Math.max(0, nw[0] - dQ);
 							this.cD = lDebt;
 						
 							System.out.println("Indeed qH > 0 --> payment should be = 0 : " + payment(dQ, nwPrime, lDebt, lProd));
 						} else { // if not possible, means that cannot reach the point where cf + l = 0
 							// has to opt out for the safest strategy: min its loss and cf + l is (mono) decreasing in dQ --> dQ = 0
+							
 							this.dQ = 0;
 							this.nwPrime = nw[0]; // all liquid assets are left in the deposit (yield higher return than production)
 							this.cD = this.lDebt = this.lProd = 0;
 							
-							System.out.println("qH w 0 --> payment should be < 0 : " + payment(dQ, nwPrime, lDebt, lProd));
+							System.out.println("qH < 0 --> payment should be < 0 : " + payment(dQ, nwPrime, lDebt, lProd));
 						
 						}
 					}
@@ -536,7 +546,7 @@ public class CFirm implements EventListener {
 					//TODO: change when put it into the general model (could be that cf + l is not mono increasing in dQ)
 					
 					//therefore here no way to adjust, cf + l is mono increasing in dQ : want to min the loss --> dQ = optimal plan
-					this.dQ = qStar;
+					this.dQ = Math.min(dQ, nw[0]);
 					this.cD = this.lProd = this.lDebt = 0;
 					this.nwPrime = Math.max(0, nw[0] - dQ); // should be equal to 0, production yields higher return than savings 
 					
@@ -556,7 +566,7 @@ public class CFirm implements EventListener {
 					System.out.println("cf + l is decreasing in q --> exist qH*. Yet, qH is : " + qH);
 					
 					if(qH > 0){ // if positive, then means that the adjustment is possible 
-					
+						
 						this.dQ = qH;
 						this.nwPrime = nw[0] - dQ; //TODO: change with cost of production different than one
 						this.cD = lDebt;
@@ -580,7 +590,7 @@ public class CFirm implements EventListener {
 				} else { // here cf + l is increasing in the production, s.t. if cf + l < 0 at the optimal quantity, 
 					// there is now to adjust -- increasing production will not increase revenues because could not sell
 					// this production (sales are bounded above by demand). If try to min the losses, then have to set dQ = qStar;
-					this.dQ = qStar; // id.
+					this.dQ = Math.min(dQ, nw[0]); // id.
 					this.lDebt = 0; // this will shift down the curve but cannot leverage more (ass) 
 					this.cD = 0;
 					this.nwPrime = nw[0] - qStar;
@@ -594,9 +604,9 @@ public class CFirm implements EventListener {
 	}
 	
 	// metho that compute the payment condition as a function of the loan, production & liquid asset remaining 
-	public double payment(double q, double nw, double lD, double lP){
+	public double payment(double q, double nw1, double lD, double lP){
 		
-		double payment = (p-c)*q + lD *(1 - Parameters.getRepaymentShare() - IUModel.r) + nw - (Parameters.getRepaymentShare() + IUModel.r) * (debt + lP);
+		double payment = (p-c)*q + lD * (1 - Parameters.getRepaymentShare() - IUModel.r) + nw1 - (Parameters.getRepaymentShare() + IUModel.r) * (debt + lP);
 		return payment;
 		
 	}
